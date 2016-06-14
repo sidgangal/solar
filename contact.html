@@ -1,0 +1,75 @@
+<!DOCTYPE HTML>
+<html>
+
+<!--Code Author: Mark-Anthony Karam
+Host: mark-anthony.ca-->
+
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8">
+<title>Contact</title>
+
+<link type="text/css" rel="stylesheet" href="css/styles.css">
+
+</head>
+
+<body>
+	
+	
+
+    <section class="body">
+    
+	    <form action="sidresult.php" method="post" enctype="multipart/form-data">
+	        
+	        <h1 class="title">Calculate the load</h1>
+
+	        Now, we will calculate how much energy you use. 
+	        
+	        <br> 
+	        Tell us how many items you have, and we will calculate your electricity load.
+	        <br>
+
+
+	        For AC system  <input type="radio" name="ac/dc" value="ac" > 
+	        For DC system  <input type="radio" name="ac/dc" value="dc"> 
+	        
+		    <label></label>
+		  Lights 25W <input name="l1" required="required" placeholder="Hour/day">
+		    <input name="l2" required="required" placeholder="no. of items">
+		            
+		    <label></label>
+		    Fan 100W<input name="f1" required="required" placeholder="Hour/day">
+		    <input name="f2" required="required" placeholder="no. of items">
+		    
+		     <label></label>
+		    TV 200W<input name="t1" required="required" placeholder="Hour/day">
+		    <input name="t2" required="required" placeholder="no. of items">
+
+		     <label></label>
+		    Satellite 50W<input name="s1" required="required" placeholder="Hour/day">
+		    <input name="s2" required="required" placeholder="no. of items">
+		    
+		     <label></label>
+		    Laptops 50W<input name="la1" required="required" placeholder="Hour/day">
+		    <input name="la2" required="required" placeholder="no. of items">
+		    
+		     <label></label>
+		    Mobile 15W<input name="m1" required="required" placeholder="Hour/day">
+		    <input name="m2" required="required" placeholder="no. of items">
+		    
+		     <label></label>
+		    Fridge 300W<input name="fr1" required="required" placeholder="Hour/day">
+		    <input name="fr2" required="required" placeholder="no. of items">
+		    
+		    
+		            
+		    <input id="submit" name="submit" type="submit" value="Submit">
+	        
+	    </form>
+
+    </section>
+
+
+
+</body>
+
+</html>
