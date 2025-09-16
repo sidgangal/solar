@@ -1,727 +1,139 @@
+<?php
+function get_post_float($name)
+{
+    $value = filter_input(INPUT_POST, $name, FILTER_VALIDATE_FLOAT);
+    if ($value === false || $value === null) {
+        return 0.0;
+    }
+
+    return max(0.0, (float) $value);
+}
+
+function load_recommendations($connection, $table, $target, $label)
+{
+    require_once __DIR__ . '/lib/calculations.php';
+
+    try {
+        $components = fetch_components($connection, $table);
+        return recommend_components($components, $target, $label);
+    } catch (RuntimeException $exception) {
+        error_log($exception->getMessage());
+        return ["Unable to retrieve {$label} recommendations at this time."];
+    }
+}
+
+$l1 = get_post_float('l1');
+$l2 = get_post_float('l2');
+$f1 = get_post_float('f1');
+$f2 = get_post_float('f2');
+$t1 = get_post_float('t1');
+$t2 = get_post_float('t2');
+$s1 = get_post_float('s1');
+$s2 = get_post_float('s2');
+$la1 = get_post_float('la1');
+$la2 = get_post_float('la2');
+$m1 = get_post_float('m1');
+$m2 = get_post_float('m2');
+$fr1 = get_post_float('fr1');
+$fr2 = get_post_float('fr2');
+
+$acDcInput = isset($_POST['ac/dc']) ? strtolower(trim($_POST['ac/dc'])) : '';
+$acDc = ($acDcInput === 'ac' || $acDcInput === 'dc') ? $acDcInput : '';
+
+$baseLoad = (25 * $l1 * $l2) + (100 * $f1 * $f2) + (200 * $t1 * $t2) + (50 * $s1 * $s2) + (50 * $la1 * $la2) + (15 * $m1 * $m2) + (300 * $fr1 * $fr2);
+$acPanelRequirement = $baseLoad / (5 * 0.75 * 0.8 * 0.8);
+$acBatteryRequirement = $baseLoad * 2 / (0.85 * 0.97 * 0.97 * 0.8 * 12);
+$acInverterLoad = ((25 * $l2) + (100 * $f2) + (200 * $t2) + (50 * $s2) + (50 * $la2) + (15 * $m2) + (300 * $fr2)) * 1.4;
+
+$dcPanelRequirement = $baseLoad / (5 * 0.75 * 0.8);
+$dcBatteryRequirement = $baseLoad * 2 / (0.95 * 0.8 * 12);
+$dcInverterLoad = ((25 * $l1) + (100 * $f1) + (200 * $t1) + (50 * $s1) + (50 * $la1) + (15 * $m1) + (300 * $fr1)) * 1.4;
+
+$panelRecommendations = [];
+$batteryRecommendations = [];
+$inverterRecommendations = [];
+$systemMessage = '';
+$inverterHeading = $acDc === 'dc' ? 'DC Inverters' : 'Inverters';
+
+require_once __DIR__ . '/config.php';
+
+try {
+    $conn = create_db_connection();
+} catch (RuntimeException $exception) {
+    error_log($exception->getMessage());
+    http_response_code(500);
+    $systemMessage = 'Unable to connect to the database.';
+}
+
+if ($systemMessage === '') {
+    if ($acDc === '') {
+        $systemMessage = 'Please select AC or DC to view recommendations.';
+    } elseif ($acDc === 'ac') {
+        $panelRecommendations = load_recommendations($conn, 'panels', $acPanelRequirement, 'panel');
+        $batteryRecommendations = load_recommendations($conn, 'battery', $acBatteryRequirement, 'battery');
+        $inverterRecommendations = load_recommendations($conn, 'inverters', $acInverterLoad, 'inverter');
+    } else {
+        $panelRecommendations = load_recommendations($conn, 'panels', $dcPanelRequirement, 'panel');
+        $batteryRecommendations = load_recommendations($conn, 'battery', $dcBatteryRequirement, 'battery');
+        $inverterRecommendations = load_recommendations($conn, 'inverters', $dcInverterLoad, 'DC inverter');
+    }
+
+    $conn->close();
+}
+
+$systemLabel = $acDc === '' ? 'Not selected' : strtoupper($acDc);
+?>
 <!DOCTYPE html>
-<html>
-<title>W3.CSS</title>
-<meta name="viewport" content="width=device-width, initial-scale=1">
-<link rel="stylesheet" href="http://www.w3schools.com/lib/w3.css">
-<link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Raleway">
-<style>
-html,body,h1,h2,h3,h4,h5 {font-family: "Raleway", sans-serif}
-</style>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="stylesheet" href="https://www.w3schools.com/lib/w3.css">
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Raleway">
+    <style>
+        html, body, h1, h2, h3, h4, h5 {font-family: "Raleway", sans-serif;}
+        .w3-ul li {padding: 12px;}
+    </style>
+    <title>Solar PV Recommendations</title>
+</head>
 <body class="w3-light-grey">
-
-<!-- w3-content defines a container for fixed size centered content, 
-and is wrapped around the whole page content, except for the footer in this example -->
 <div class="w3-content" style="max-width:1400px">
-
-<!-- Header -->
-<div class="w3-container w3-center w3-padding-32"> 
-  <h1><b>SOLAR PV SYSTEM</b></h1>
-  <p>Your savings start <span class="w3-tag">now</span></p>
+    <div class="w3-container w3-center w3-padding-32">
+        <h1><b>SOLAR PV SYSTEM</b></h1>
+        <p>Your savings start <span class="w3-tag">now</span></p>
+    </div>
+    <div class="w3-container w3-padding-16 w3-white w3-margin-bottom">
+        <p><strong>Total daily load:</strong> <?php echo htmlspecialchars(number_format($baseLoad, 2), ENT_QUOTES, 'UTF-8'); ?> Wh</p>
+        <p><strong>Configuration:</strong> <?php echo htmlspecialchars($systemLabel, ENT_QUOTES, 'UTF-8'); ?></p>
+    </div>
+    <?php if ($systemMessage !== ''): ?>
+        <div class="w3-container w3-center w3-padding-32 w3-white w3-margin-bottom">
+            <h2><b><?php echo htmlspecialchars($systemMessage, ENT_QUOTES, 'UTF-8'); ?></b></h2>
+        </div>
+    <?php else: ?>
+        <?php $sections = [
+            ['title' => 'Panels', 'items' => $panelRecommendations],
+            ['title' => 'Batteries', 'items' => $batteryRecommendations],
+            ['title' => $inverterHeading, 'items' => $inverterRecommendations],
+        ]; ?>
+        <?php foreach ($sections as $section): ?>
+            <div class="w3-container w3-padding-32 w3-white w3-margin-bottom">
+                <h2 class="w3-center"><b><?php echo htmlspecialchars($section['title'], ENT_QUOTES, 'UTF-8'); ?></b></h2>
+                <ul class="w3-ul w3-border">
+                    <?php foreach ($section['items'] as $recommendation): ?>
+                        <li><?php echo nl2br(htmlspecialchars($recommendation, ENT_QUOTES, 'UTF-8')); ?></li>
+                    <?php endforeach; ?>
+                </ul>
+            </div>
+        <?php endforeach; ?>
+        <div class="w3-container w3-center w3-padding-32 w3-white w3-margin-bottom">
+            <h3><b>Installation Tip</b></h3>
+            <p>Please install the panels at a 43 degree tilt to the horizontal ground.</p>
+        </div>
+    <?php endif; ?>
+    <div class="w3-container w3-center w3-padding-32">
+        <a class="w3-button w3-blue" href="contact.html">Go back and calculate more</a>
+    </div>
 </div>
-
-<!-- About Card on medium screens -->
-<div class="w3-hide-large w3-hide-small w3-margin-top w3-margin-bottom">
-    <div class="w3-container w3-white w3-padding-32">
-    <img src="sid.jpg" alt="Me" style="width:150px" class="w3-left w3-round-large w3-margin-right">
-    <span>Just me, myself and I, exploring the universe of uknownment. I have a heart of love and an interest of lorem ipsum and mauris neque quam blog. I want to share my world with you.</span>
-  </div>
-</div>
-
-<!-- About Card on small screens -->
-<div class="w3-hide-large w3-hide-medium w3-margin-top w3-margin-bottom">
-  <img src="img_avatar_g.jpg" style="width:100%" alt="Me">
-  <div class="w3-container w3-white">
-    <h4><b>My Name</b></h4>
-    <p>Just me, myself and I, exploring the universe of uknownment. I have a heart of love and a interest of lorem ipsum and mauris neque quam blog. I want to share my world with you.</p>
-  </div>
-</div>
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-      <?php
-
-  
- $l1 = $_POST['l1'];
-        $l2 = $_POST['l2'];
-        $f1 = $_POST['f1'];
-        $f2 = $_POST['f2'];
-    $t1 = $_POST['t1'];
-    $t2 = $_POST['t2'];
-    $s1 = $_POST['s1'];
-    $s2 = $_POST['s2'];
-    $la1 = $_POST['la1'];
-    $la2 = $_POST['la2'];
-    $m1 = $_POST['m1'];
-    $m2 = $_POST['m2'];
-    $fr1 = $_POST['fr1'];
-    $fr2 = $_POST['fr2'];
-
-
-    $load = (25*$l1 *$l2 )+ (100 * $f1 * $f2) + (200 *$t1 * $t2) + (50 * $s1 *$s2) +(50 * $la1 *$la2) + (15 * $m1 * $m2) + (300 * $fr1 *$fr2);
-    $parr = $load/(5 * 0.75 * 0.8* 0.8);
-    $pbatt = $load * 2 / (0.85 * 0.97 * 0.97 * 0.8 * 12);
-
-    $load = ((25*$l2  )+ (100 * $f2 ) + (200 *$t2 ) + (50 * $s2 ) +(50 * $la2 ) + (15 * $m2 ) + (300 * $fr2 ))*1.4;
-//   echo nl2br($load);
-   echo nl2br("\n");
-
-      $conn = mysqli_connect("localhost", "root", "redeemer", "solar");
-      //echo "step1";
-// Check connection
-if (mysqli_connect_errno()) {
-    die("Connection failed: " . mysqli_connect_error());
-} 
-
-    
-        echo nl2br ("Connections are made successfully::\n");
-      
-     if (empty($_POST['ac/dc']))
-{
- echo nl2br ("emptyyyy radio\n"); 
-}
-        
-          if ($_POST['ac/dc'] == "ac") 
-          {
-
-         
-echo ($parr);
-echo nl2br ("parr\n");
-echo ($pbatt);
-echo nl2br ("pbatt\n");
-
- $result = mysqli_query($conn,"SELECT PRICE , NAME  FROM panels ORDER BY W Asc ");
-if ($result->num_rows == 0) { echo ("empty table: panels"); }
-else { flag = 0;
-while ($row = mysql_fetch_array($result, MYSQL_ASSOC)) {
-    if ($parr < = $row ["W"]) {
-            flag =1;
-            ?>
-
-      <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use 1 $row["NAME"] panel costing Rs $row["PRICE"] \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
-                        }
-
-        }
-if (flag == 0)
-{
-     $result2 = mysqli_query($conn,"SELECT max(W)  FROM panels " );
-        $row = mysqli_fetch_array($result2);
-        if ($parr%$row["W"] == 0 ) {
-
-        $num = $parr / $row["W"]; }
-else {$num = $parr / $row["W"]+1; }
-            ?>
-         <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use  $num panels costing Rs $row["PRICE"]*$num \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
-    
-$result3 = mysqli_query($conn,"SELECT W FROM panels
-WHERE W = (SELECT MAX(W) FROM panels WHERE W < (SELECT MAX(W) FROM panels)) " );
-  $row3 = mysqli_fetch_array($result3);
-
-  if ($parr%$row3["W"] == 0 ) {
-
-        $num = $parr / $row3["W"]; }
-else {$num = $parr / $row3["W"]+1; }
-            ?>
-         <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use  $num panels costing Rs $row3["PRICE"]*$num \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
- $result4 = mysqli_query($conn,"SELECT W FROM panels WHERE W = (SELECT MAX(W) FROM panels WHERE W < (SELECT MAX(W) FROM panels WHERE W <
- (SELECT MAX(W) FROM panels)))");
- $row4 = mysqli_fetch_array($result4);
-
-
- if ($parr%$row4["W"] == 0 ) {
-
-        $num = $parr / $row4["W"]; }
-else {$num = $parr / $row4["W"]+1; }
-            ?>
-         <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use  $num panels costing Rs $row4["PRICE"]*$num \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
-    }
-
-  
-
- } 
-
-
-$result = mysqli_query($conn,"SELECT PRICE , NAME  FROM  battery ORDER BY W Asc ");
-if ($result->num_rows == 0) { echo ("empty table: battery"); }
-else { flag = 0;
-while ($row = mysql_fetch_array($result, MYSQL_ASSOC)) {
-    if ($pbatt < = $row ["W"]) {
-            flag =1;
-            ?>
-
-      <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use 1 $row["NAME"] battery costing Rs $row["PRICE"] \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-</div>
-        
-   <?php
-
-
-}
-}
-
-if (flag == 0)
-{
-     $result2 = mysqli_query($conn,"SELECT max(W)  FROM battery " );
-        $row = mysqli_fetch_array($result2);
-        if ($pbatt%$row["W"] == 0 ) {
-
-        $num = $pbatt / $row["W"]; }
-else {$num = $pbatt / $row["W"]+1; }
-            ?>
-         <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use  $num batteries costing Rs $row["PRICE"]*$num \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
-    
-$result3 = mysqli_query($conn,"SELECT W FROM battery
-WHERE W = (SELECT MAX(W) FROM battery WHERE W < (SELECT MAX(W) FROM battery)) " );
-  $row3 = mysqli_fetch_array($result3);
-
-  if ($pbatt%$row3["W"] == 0 ) {
-
-        $num = $pbatt / $row3["W"]; }
-else {$num = $pbatt / $row3["W"]+1; }
-            ?>
-         <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use  $num batteries costing Rs $row3["PRICE"]*$num \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
- $result4 = mysqli_query($conn,"SELECT W FROM battery WHERE W = (SELECT MAX(W) FROM battery WHERE W < (SELECT MAX(W) FROM battery WHERE W <
- (SELECT MAX(W) FROM battery)))");
- $row4 = mysqli_fetch_array($result4);
-
-
- if ($pbatt%$row4["W"] == 0 ) {
-
-        $num = $pbatt / $row4["W"]; }
-else {$num = $pbatt / $row4["W"]+1; }
-            ?>
-         <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use  $num batteries costing Rs $row4["PRICE"]*$num \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
-    }
-
-  
-}
-
-
-
-    
-$result = mysqli_query($conn,"SELECT PRICE , NAME  FROM inverters ORDER BY W Asc ");
-if ($result->num_rows == 0) { echo ("empty table: inverters "); }
-else { flag = 0;
-while ($row = mysql_fetch_array($result, MYSQL_ASSOC)) {
-    if ($load < = $row ["W"]) {
-            flag =1;
-            ?>
-
-      <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use 1 $row["NAME"] inverter costing Rs $row["PRICE"] \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-</div>
-        
-   <?php
-
-
-}
-}
-
-if (flag == 0)
-{
-     $result2 = mysqli_query($conn,"SELECT max(W)  FROM inverters " );
-        $row = mysqli_fetch_array($result2);
-        if ($load%$row["W"] == 0 ) {
-
-        $num = $load / $row["W"]; }
-else {$num = $load / $row["W"]+1; }
-            ?>
-         <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use  $num inverters costing Rs $row["PRICE"]*$num \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
-    
-$result3 = mysqli_query($conn,"SELECT W FROM inverters
-WHERE W = (SELECT MAX(W) FROM inverters WHERE W < (SELECT MAX(W) FROM inverters)) " );
-  $row3 = mysqli_fetch_array($result3);
-
-  if ($load%$row3["W"] == 0 ) {
-
-        $num = $load / $row3["W"]; }
-else {$num = $load / $row3["W"]+1; }
-            ?>
-         <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use  $num inverters costing Rs $row3["PRICE"]*$num \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
- $result4 = mysqli_query($conn,"SELECT W FROM inverters WHERE W = (SELECT MAX(W) FROM inverters WHERE W < (SELECT MAX(W) FROM inverters WHERE W <
- (SELECT MAX(W) FROM inverters)))");
- $row4 = mysqli_fetch_array($result4);
-
-
- if ($pbatt%$row4["W"] == 0 ) {
-
-        $num = $load / $row4["W"]; }
-else {$num = $load / $row4["W"]+1; }
-            ?>
-         <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use  $num inverters costing Rs $row4["PRICE"]*$num \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
-    }
-
-  
-}
-
-
-
-    
-
-}
-
-
-else if ($_POST['ac/dc'] == "dc" ){
-$load = (25*$l1 *$l2 )+ (100 * $f1 * $f2) + (200 *$t1 * $t2) + (50 * $s1 *$s2) +(50 * $la1 *$la2) + (15 * $m1 * $m2) + (300 * $fr1 *$fr2);    
-$parr = $load/(5 * 0.75 * 0.8);
-$pbatt = $load * 2 / (.95 * 0.8 * 12);
-$load = ((25*$l1 )+ (100 * $f1 ) + (200 *$t1 ) + (50 * $s1 ) +(50 * $la1) + (15 * $m1 ) + (300 * $fr1 ))*1.4;
-
-//echo ($parr);
-//echo nl2br ("ending\n");
-
-$result = mysqli_query($conn,"SELECT PRICE , NAME  FROM panels ORDER BY W Asc ");
-if ($result->num_rows == 0) { echo ("empty table: panels"); }
-else { flag = 0;
-while ($row = mysql_fetch_array($result, MYSQL_ASSOC)) {
-    if ($parr < = $row ["W"]) {
-            flag =1;
-            ?>
-
-      <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use 1 $row["NAME"] panel costing Rs $row["PRICE"] \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
-                        }
-
-        }
-if (flag == 0)
-{
-     $result2 = mysqli_query($conn,"SELECT max(W)  FROM panels " );
-        $row = mysqli_fetch_array($result2);
-        if ($parr%$row["W"] == 0 ) {
-
-        $num = $parr / $row["W"]; }
-else {$num = $parr / $row["W"]+1; }
-            ?>
-         <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use  $num panels costing Rs $row["PRICE"]*$num \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
-    
-$result3 = mysqli_query($conn,"SELECT W FROM panels
-WHERE W = (SELECT MAX(W) FROM panels WHERE W < (SELECT MAX(W) FROM panels)) " );
-  $row3 = mysqli_fetch_array($result3);
-
-  if ($parr%$row3["W"] == 0 ) {
-
-        $num = $parr / $row3["W"]; }
-else {$num = $parr / $row3["W"]+1; }
-            ?>
-         <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use  $num panels costing Rs $row3["PRICE"]*$num \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
- $result4 = mysqli_query($conn,"SELECT W FROM panels WHERE W = (SELECT MAX(W) FROM panels WHERE W < (SELECT MAX(W) FROM panels WHERE W <
- (SELECT MAX(W) FROM panels)))");
- $row4 = mysqli_fetch_array($result4);
-
-
- if ($parr%$row4["W"] == 0 ) {
-
-        $num = $parr / $row4["W"]; }
-else {$num = $parr / $row4["W"]+1; }
-            ?>
-         <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use  $num panels costing Rs $row4["PRICE"]*$num \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
-    }
-
-  
-
- } 
-
-
-$result = mysqli_query($conn,"SELECT PRICE , NAME  FROM  battery ORDER BY W Asc ");
-if ($result->num_rows == 0) { echo ("empty table: battery"); }
-else { flag = 0;
-while ($row = mysql_fetch_array($result, MYSQL_ASSOC)) {
-    if ($pbatt < = $row ["W"]) {
-            flag =1;
-            ?>
-
-      <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use 1 $row["NAME"] battery costing Rs $row["PRICE"] \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-</div>
-        
-   <?php
-
-
-}
-}
-
-if (flag == 0)
-{
-     $result2 = mysqli_query($conn,"SELECT max(W)  FROM battery " );
-        $row = mysqli_fetch_array($result2);
-        if ($pbatt%$row["W"] == 0 ) {
-
-        $num = $pbatt / $row["W"]; }
-else {$num = $pbatt / $row["W"]+1; }
-            ?>
-         <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use  $num batteries costing Rs $row["PRICE"]*$num \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
-    
-$result3 = mysqli_query($conn,"SELECT W FROM battery
-WHERE W = (SELECT MAX(W) FROM battery WHERE W < (SELECT MAX(W) FROM battery)) " );
-  $row3 = mysqli_fetch_array($result3);
-
-  if ($pbatt%$row3["W"] == 0 ) {
-
-        $num = $pbatt / $row3["W"]; }
-else {$num = $pbatt / $row3["W"]+1; }
-            ?>
-         <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use  $num batteries costing Rs $row3["PRICE"]*$num \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
- $result4 = mysqli_query($conn,"SELECT W FROM battery WHERE W = (SELECT MAX(W) FROM battery WHERE W < (SELECT MAX(W) FROM battery WHERE W <
- (SELECT MAX(W) FROM battery)))");
- $row4 = mysqli_fetch_array($result4);
-
-
- if ($pbatt%$row4["W"] == 0 ) {
-
-        $num = $pbatt / $row4["W"]; }
-else {$num = $pbatt / $row4["W"]+1; }
-            ?>
-         <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use  $num batteries costing Rs $row4["PRICE"]*$num \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
-    }
-
-  
-}
-
-
-
-    
-$result = mysqli_query($conn,"SELECT PRICE , NAME  FROM inverters ORDER BY W Asc ");
-if ($result->num_rows == 0) { echo ("empty table: inverters "); }
-else { flag = 0;
-while ($row = mysql_fetch_array($result, MYSQL_ASSOC)) {
-    if ($load < = $row ["W"]) {
-            flag =1;
-            ?>
-
-      <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use 1 $row["NAME"] DC inverter costing Rs $row["PRICE"] \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-</div>
-        
-   <?php
-
-
-}
-}
-
-if (flag == 0)
-{
-     $result2 = mysqli_query($conn,"SELECT max(W)  FROM inverters " );
-        $row = mysqli_fetch_array($result2);
-        if ($load%$row["W"] == 0 ) {
-
-        $num = $load / $row["W"]; }
-else {$num = $load / $row["W"]+1; }
-            ?>
-         <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use  $num DC inverters costing Rs $row["PRICE"]*$num \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
-    
-$result3 = mysqli_query($conn,"SELECT W FROM inverters
-WHERE W = (SELECT MAX(W) FROM inverters WHERE W < (SELECT MAX(W) FROM inverters)) " );
-  $row3 = mysqli_fetch_array($result3);
-
-  if ($load%$row3["W"] == 0 ) {
-
-        $num = $load / $row3["W"]; }
-else {$num = $load / $row3["W"]+1; }
-            ?>
-         <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use  $num DC inverters costing Rs $row3["PRICE"]*$num \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
- $result4 = mysqli_query($conn,"SELECT W FROM inverters WHERE W = (SELECT MAX(W) FROM inverters WHERE W < (SELECT MAX(W) FROM inverters WHERE W <
- (SELECT MAX(W) FROM inverters)))");
- $row4 = mysqli_fetch_array($result4);
-
-
- if ($pbatt%$row4["W"] == 0 ) {
-
-        $num = $load / $row4["W"]; }
-else {$num = $load / $row4["W"]+1; }
-            ?>
-         <div class="w3-container w3-center w3-padding-32"> 
-  <h2><b> <?php  echo nl2br ("You should use  $num DC inverters costing Rs $row4["PRICE"]*$num \n"); ?> </b></h2> 
-
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-
-
-   <?php
-
-    }
-
-  
-}
-      
-
-}
-
-
-
-     
-     mysql_close($connector);
-       ?>
-   
-<h1> Please install the panels at a 43 degrees tilt to horizontal ground. </h1>
-
-
-
-
-
-
-
-
-
-
-
-
-
- <form action="contact.html" method="post" enctype="multipart/form-data">
-          
-         
-        
-        
-      <div class="w3-container w3-center w3-padding-32"> 
- <input id="submit" name="Go back and calculate more" type="submit" value="Go back and calculate more">
-</div>
-   <div class="w3-container w3-center w3-padding-32"> 
-  
-
-</div>
-                
-        
-          
-      </form>
-
-
-   
-
 </body>
 </html>
