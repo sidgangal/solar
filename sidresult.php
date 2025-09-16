@@ -1428,7 +1428,7 @@ else if ($pbatt <=40){
 
 
      
-     mysql_close($connector);
+     $conn->close();
        ?>
    
 <h1> Please install the panels at a 43 degrees tilt to horizontal ground. </h1>
